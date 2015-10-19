@@ -123,10 +123,10 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     var outputPath = ""
     
     ///VITAL CAMERA INFORMATION
-    var bracketMax = 4
+    var bracketMax = 2
     var currentBracket = 1
     var durationDenominator = 1 //INCREASING THIS NUMBER MAKES THE SHUTTER FASTER
-    var fps: Int32 = 15 //desired frame rate times your number of brackets
+    var fps: Int32 = 60 //desired frame rate times your number of brackets
     var framerate: CMTime!
     
     var bracketDimISO:Float!
@@ -150,6 +150,9 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     var isoGlitchGremlin = 0
    // var isoRampState = true
     
+    ///remove duplicate frames
+    var lastPixelBuffer: CVPixelBuffer!
+    
     ////INTERFACE
     @IBOutlet var recordButton: UIButton!
     
@@ -169,33 +172,47 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         ////ADD VIDEO INPUT
         var error = NSErrorPointer()
-        var VideoInputDevice = AVCaptureDeviceInput(device: captureDevice!, error: error)
+        var VideoInputDevice: AVCaptureDeviceInput!
+        do {
+            VideoInputDevice = try AVCaptureDeviceInput(device: captureDevice!)
+        } catch _ as NSError {
+            //error.memory = error1
+            VideoInputDevice = nil
+        }
         if CaptureSession.canAddInput(VideoInputDevice) {
             CaptureSession.addInput(VideoInputDevice)
         } else {
-            println("cannot add video input")
+            print("cannot add video input")
         }
         
         ////ADD AUDIO INPUT
-        var audioCaptureDevice = AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
+        let audioCaptureDevice = AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
         error = NSErrorPointer()
-        var audioInput = AVCaptureDeviceInput(device: audioCaptureDevice, error: error)
+        var audioInput: AVCaptureDeviceInput!
+        do {
+            audioInput = try AVCaptureDeviceInput(device: audioCaptureDevice)
+        } catch let error1 as NSError {
+            error.memory = error1
+            audioInput = nil
+        }
         if CaptureSession.canAddInput(audioInput) {
             CaptureSession.addInput(audioInput)
         } else {
-            println("cannot add audio input")
+            print("cannot add audio input")
         }
         
         ////ADD VIDEO PREVIEW LAYER
-        PreviewLayer = AVCaptureVideoPreviewLayer.layerWithSession(CaptureSession) as! AVCaptureVideoPreviewLayer
+        ////PreviewLayer = AVCaptureVideoPreviewLayer(layer: CaptureSession) as AVCaptureVideoPreviewLayer
+        let PreviewLayer = AVCaptureVideoPreviewLayer(session: CaptureSession)
+        
         PreviewLayer!.connection?.videoOrientation = AVCaptureVideoOrientation.LandscapeRight
         
         ////DISPLAY THE PREVIEW LAYER
         ///Display it full screen under out view controller existing controls
-        var layerRect = view.bounds
+        let layerRect = view.bounds
         PreviewLayer.bounds = layerRect
         PreviewLayer.position = CGPointMake(CGRectGetMidX(layerRect), CGRectGetMidY(layerRect))
-        var CameraView = UIView()
+        let CameraView = UIView()
         view.addSubview(CameraView)
         view.sendSubviewToBack(CameraView) //put the video preview behind the inteface
         CameraView.layer.addSublayer(PreviewLayer)
@@ -207,7 +224,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         if CaptureSession.canAddOutput(videoDataOutput){
             CaptureSession.addOutput(videoDataOutput);
         } else {
-            println("cannot add video data output")
+            print("cannot add video data output")
         }
         
         ////ADD AUDIO DATA OUTPUT
@@ -215,16 +232,18 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         if CaptureSession.canAddOutput(audioDataOutput) {
             CaptureSession.addOutput(audioDataOutput);
         } else {
-            println("cannot add audio data output")
+            print("cannot add audio data output")
         }
         
         ////START THE CAPTURE SESSION RUNNING
         dispatch_async(sessionQueue) {
             self.CameraSetOutputProperties()
             self.CaptureSession.startRunning()
-            if self.captureDevice.lockForConfiguration(nil) {
-                println("set autofocus")
+            do {
+                try self.captureDevice.lockForConfiguration()
+                print("set autofocus")
                 self.captureDevice.focusMode = AVCaptureFocusMode.AutoFocus
+            } catch _ {
             }
         }
         
@@ -234,15 +253,16 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         
         //displaylink style swapping
-        var updater = CADisplayLink(target: self, selector: Selector("Update"))
-        updater.frameInterval = 4
-        updater.addToRunLoop(NSRunLoop.currentRunLoop(), forMode: NSRunLoopCommonModes)
+        //let updater = CADisplayLink(target: self, selector: Selector("Update"))
+        //updater.frameInterval = 1
+        //updater.addToRunLoop(NSRunLoop.currentRunLoop(), forMode: NSRunLoopCommonModes)
     }
     
     override func viewWillAppear(animated: Bool) {
         WeAreRecording = false
     }
     
+    /*//defunct display link swapper
     func Update() {
         if flippingISO {
             isoGlitchGremlin++
@@ -250,13 +270,15 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 self.isoSwappOMatic()
             }
         } else {
-            if captureDevice.lockForConfiguration(nil) {
+            do {
+                try captureDevice.lockForConfiguration()
                 captureDevice.focusMode = AVCaptureFocusMode.AutoFocus
                 captureDevice.exposureMode = AVCaptureExposureMode.AutoExpose
+            } catch _ {
             }
         }
     }
-    
+    */
     
     func CameraSetOutputProperties()
     {
@@ -264,19 +286,26 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         ////of course your max frame rate will be only 60 fps
         ////at 720p your frame rate options go as high as 240
         framerate = CMTimeMake(1, fps)
-        var CaptureConnection = videoDataOutput.connectionWithMediaType(AVMediaTypeVideo)
+        let CaptureConnection = videoDataOutput.connectionWithMediaType(AVMediaTypeVideo)
         CaptureConnection.videoOrientation = AVCaptureVideoOrientation.LandscapeRight
         for vFormat in captureDevice.formats {
+            print(vFormat.formatDescription)
+            //var thing = CMVideoFormatDescriptionRef(vFormat.formatDescription);
+            //println("\(thing)")
+            print(_stdlib_getDemangledTypeName(vFormat.formatDescription))
             var ranges = vFormat.videoSupportedFrameRateRanges as! [AVFrameRateRange]
-            var frameRates = ranges[0]
+            let frameRates = ranges[0]
             if frameRates.maxFrameRate == 240 {
-                println("ok frame rate here \(vFormat)")
-                captureDevice.lockForConfiguration(nil)
+                print("ok frame rate here \(vFormat)")
+                do {
+                    try captureDevice.lockForConfiguration()
+                } catch _ {
+                }
                 captureDevice.activeFormat = vFormat as! AVCaptureDeviceFormat
                 captureDevice.activeVideoMinFrameDuration = framerate
                 captureDevice.activeVideoMaxFrameDuration = framerate
                 captureDevice.unlockForConfiguration()
-                println(framerate.timescale)
+                print(framerate.timescale)
                 break
             }
         }
@@ -284,9 +313,11 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         ////SET THE STABLIZATION MODE
         CaptureConnection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationMode.Auto
         
-        if captureDevice.lockForConfiguration(nil) {
-            println("set autofocus")
+        do {
+            try captureDevice.lockForConfiguration()
+            print("set autofocus")
             captureDevice.focusMode = AVCaptureFocusMode.AutoFocus
+        } catch _ {
         } 
     }
     
@@ -295,7 +326,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         didDropSampleBuffer sampleBuffer: CMSampleBuffer!,
         fromConnection connection: AVCaptureConnection!) {
             droppedFrameCounter++
-            println("frame dropped \(droppedFrameCounter)")
+            print("frame dropped \(droppedFrameCounter)")
     }
     
     func captureOutput(captureOutput: AVCaptureOutput!, didOutputSampleBuffer sampleBuffer: CMSampleBuffer!,
@@ -306,19 +337,19 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             }
             
             let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer)
-            let mediaType = CMFormatDescriptionGetMediaType(formatDesc)
-            if mediaType.hashValue == kCMMediaType_Video {
+            let mediaType = CMFormatDescriptionGetMediaType(formatDesc!)
+            if mediaType.hashValue == Int(kCMMediaType_Video) {
                 videoSpoolerUpper++
-                //if flippingISO {
-                //    self.isoSwappOMatic()
-                //}
+                if flippingISO {
+                    self.isoSwappOMatic()
+                }
                 
-                var timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                 
                 if (self.firstSample) {
                     if videoWriter.startWriting() {
                     } else {
-                        println("Failed to start writing. \(videoWriter.error)" );
+                        print("Failed to start writing. \(videoWriter.error)" );
                     }
                     self.firstSample = false;
                 }
@@ -327,15 +358,21 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 if videoSpoolerUpper == videoSpoolerUpperTO {
                     videoWriter.startSessionAtSourceTime(timestamp);
                 }
+                let pixelBuffer : CVPixelBuffer? = CMSampleBufferGetImageBuffer(sampleBuffer)
                 
                 if self.assetWriterVideoInput.readyForMoreMediaData && videoSpoolerUpper >= videoSpoolerUpperTO {
+                    print("\(pixelBuffer === lastPixelBuffer)")
                     assetWriterVideoInput.appendSampleBuffer(sampleBuffer);
+                    lastPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+                    
+                } else {
+                    print("not ready \(videoSpoolerUpper)")
                 }
-            } else if self.firstSample == false && mediaType.hashValue == kCMMediaType_Audio && videoSpoolerUpper >= videoSpoolerUpperTO {
+            } else if self.firstSample == false && mediaType.hashValue == Int(kCMMediaType_Audio) && videoSpoolerUpper >= videoSpoolerUpperTO {
                 if self.assetWriterAudioInput.readyForMoreMediaData {
                     if self.assetWriterAudioInput.appendSampleBuffer(sampleBuffer) {
                     } else {
-                        println("failed to write audio sample")
+                        print("failed to write audio sample")
                     }
                 }
             }
@@ -343,16 +380,16 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     func isoSwappOMatic () {
         
-        var minISO = self.captureDevice.activeFormat.minISO;
-        var maxISO = self.captureDevice.activeFormat.maxISO;
+        let minISO = self.captureDevice.activeFormat.minISO;
+        let maxISO = self.captureDevice.activeFormat.maxISO;
         ////println("minISO \(minISO) maxISO \(maxISO)")
         ///iPhone 6 Plus
         ///minISO 29.0 maxISO 928.0
         
         
-        var q =  bracketDimISO - bracketBrightISO
-        var leng = q + bracketDimISO;
-        var segment = leng / Float(bracketMax);
+        let q =  bracketDimISO - bracketBrightISO
+        let leng = q + bracketDimISO;
+        let segment = leng / Float(bracketMax);
         var isoVal = segment * Float(currentBracket)
         
         if isoVal < minISO {
@@ -363,19 +400,21 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             isoVal = maxISO
         }
         
-        var t = bracketDimFrameDuration.value - bracketBrightFrameDuration.value
-        var tLeng = t + bracketBrightFrameDuration.value
-        var segmentT = tLeng / Int64(bracketMax);
-        var timeDurationVal = segmentT * Int64(currentBracket)
+        let t = bracketDimFrameDuration.value - bracketBrightFrameDuration.value
+        let tLeng = t + bracketBrightFrameDuration.value
+        let segmentT = tLeng / Int64(bracketMax);
+        let timeDurationVal = segmentT * Int64(currentBracket)
         
-        var frameTime = CMTimeMake(timeDurationVal, bracketBrightFrameDuration.timescale)
+        let frameTime = CMTimeMake(timeDurationVal, bracketBrightFrameDuration.timescale)
 
-        if captureDevice.lockForConfiguration(nil) {
+        do {
+            try captureDevice.lockForConfiguration()
 
             captureDevice.setExposureModeCustomWithDuration(frameTime, ISO: isoVal, completionHandler: { (time) -> Void in
                 
             })
             
+        } catch _ {
         }
         self.captureDevice.unlockForConfiguration()
         currentBracket++;
@@ -396,17 +435,20 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     @IBAction func StartStopButtonPressed(sender : UIButton) {
         if (!WeAreRecording)
         {
-            println("START RECORDING")
+            print("START RECORDING")
             WeAreRecording = true
             recordButton.setTitle("stop", forState: UIControlState.Normal)
             
             ////SET OUTPUT URL AND PATH. DELETE ANY FILE THAT EXISTS THERE
-            var tmpdir = NSTemporaryDirectory()
+            let tmpdir = NSTemporaryDirectory()
             outputPath = "\(tmpdir)output.mov"
-            outputURL = NSURL(fileURLWithPath:outputPath as String)!
+            outputURL = NSURL(fileURLWithPath:outputPath as String)
             let filemgr = NSFileManager.defaultManager()
             if filemgr.fileExistsAtPath(outputPath) {
-                filemgr.removeItemAtPath(outputPath, error: nil)
+                do {
+                    try filemgr.removeItemAtPath(outputPath)
+                } catch _ {
+                }
             }
             
             ////FREEEZE THE WHITE BALLENCE
@@ -418,23 +460,27 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             }*/
             flippingISO = true
             
-            if captureDevice.lockForConfiguration(nil) {
+            do {
+                try captureDevice.lockForConfiguration()
                 captureDevice.focusMode = AVCaptureFocusMode.Locked
+            } catch _ {
             }
             
             currentBracket = 1
             startWriting()
         } else {
-            if captureDevice.lockForConfiguration(nil) {
+            do {
+                try captureDevice.lockForConfiguration()
                 captureDevice.focusMode = AVCaptureFocusMode.AutoFocus
                 captureDevice.exposureMode = AVCaptureExposureMode.AutoExpose
+            } catch _ {
             }
             stopRecording()
         }
     }
     
     func stopRecording() {
-        println("STOP RECORDING")
+        print("STOP RECORDING")
         recordButton.setTitle("start", forState: UIControlState.Normal)
         WeAreRecording = false
         self.flippingISO = false
@@ -444,20 +490,20 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         assetWriterAudioInput.markAsFinished()
         self.videoWriter.finishWritingWithCompletionHandler({ () -> Void in
             if self.videoWriter.status == AVAssetWriterStatus.Failed {
-                println("VIDEO WRITER ERROR: \(self.videoWriter.error.description)")
+                print("VIDEO WRITER ERROR: \(self.videoWriter.error!.description)")
             } else {
                 let fileManager = NSFileManager.defaultManager()
                 if fileManager.fileExistsAtPath(self.outputPath as String) {
                     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), {
                         if UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(self.outputPath) {  ///(fileURL) {
-                            var complete : ALAssetsLibraryWriteVideoCompletionBlock = {reason in println("reason \(reason)")}
+                            //var complete : ALAssetsLibraryWriteVideoCompletionBlock = {reason in print("reason \(reason)")}
                             UISaveVideoAtPathToSavedPhotosAlbum(self.outputPath as String, self, "savingCallBack:didFinishSavingWithError:contextInfo:", nil)
                         } else {
-                            println("the file must be bad!")
+                            print("the file must be bad!")
                         }
                     });
                 } else {
-                    println("there is no file")
+                    print("there is no file")
                 }
             }
         });
@@ -466,7 +512,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     func savingCallBack(video: NSString, didFinishSavingWithError error:NSError, contextInfo:UnsafeMutablePointer<Void>){
-        println("the file has been saved sucessfully")
+        print("the file has been saved sucessfully")
     }
     
     func startWriting () {
@@ -477,33 +523,40 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             
             ////CONFIGURE THE ASSET WRITER
             ///Create temporary URL to record to
-            var tmpdir = NSTemporaryDirectory()
+            let tmpdir = NSTemporaryDirectory()
             self.outputPath = "\(tmpdir)output.mov"
-            self.outputURL = NSURL(fileURLWithPath:self.outputPath as String)!
+            self.outputURL = NSURL(fileURLWithPath:self.outputPath as String)
             
             ////INITIALIZE ASSET WRITER
-            var writeError: NSErrorPointer = nil
-            self.videoWriter = AVAssetWriter(URL: self.outputURL, fileType: AVFileTypeQuickTimeMovie, error: writeError)
+            let writeError: NSErrorPointer = nil
+            do {
+                self.videoWriter = try AVAssetWriter(URL: self.outputURL, fileType: AVFileTypeQuickTimeMovie)
+            } catch let error as NSError {
+                writeError.memory = error
+                self.videoWriter = nil
+            } catch {
+                fatalError()
+            }
             
             ////CONFIGURE VIDEO WRITER
-            self.assetWriterVideoInput = AVAssetWriterInput(mediaType: AVMediaTypeVideo, outputSettings: self.videoOutputSettings as [NSObject : AnyObject])
+            self.assetWriterVideoInput = AVAssetWriterInput(mediaType: AVMediaTypeVideo, outputSettings: self.videoOutputSettings as? [String : AnyObject] )
             self.assetWriterVideoInput.expectsMediaDataInRealTime = true
             
             if self.videoWriter.canAddInput(self.assetWriterVideoInput) {
                 self.videoWriter.addInput(self.assetWriterVideoInput)
             } else {
-                println("unable to add video input to writer")
+                print("unable to add video input to writer")
             }
             
             ////CONFIGURE VIDEO WRITER AUDIO INPUT
-            var audioSettings = self.audioDataOutput.recommendedAudioSettingsForAssetWriterWithOutputFileType(self.fileType)
-            self.assetWriterAudioInput = AVAssetWriterInput(mediaType: AVMediaTypeAudio, outputSettings: audioSettings)
+            let audioSettings = self.audioDataOutput.recommendedAudioSettingsForAssetWriterWithOutputFileType(self.fileType)
+            self.assetWriterAudioInput = AVAssetWriterInput(mediaType: AVMediaTypeAudio, outputSettings: audioSettings as? [String: AnyObject])
             self.assetWriterAudioInput.expectsMediaDataInRealTime = true;
             
             if self.videoWriter.canAddInput(self.assetWriterAudioInput) {
                 self.videoWriter.addInput(self.assetWriterAudioInput);
             } else {
-                println("Unable to add audio input to writer.");
+                print("Unable to add audio input to writer.");
             }
             
             self.isWriting = true;
@@ -518,14 +571,14 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     @IBAction func setBracketBright(sender: AnyObject) {
         bracketBrightISO = captureDevice.ISO
         bracketBrightFrameDuration = captureDevice.exposureDuration
-        println("\(bracketBrightISO), \(bracketBrightFrameDuration.timescale) \(bracketBrightFrameDuration.value)")
+        print("\(bracketBrightISO), \(bracketBrightFrameDuration.timescale) \(bracketBrightFrameDuration.value)")
         brightBracketButton.setTitleColor(UIColor.greenColor(), forState: UIControlState.Normal)
     }
     
     @IBAction func setBracketDim(sender: AnyObject) {
         bracketDimISO = captureDevice.ISO
         bracketDimFrameDuration = captureDevice.exposureDuration
-        println("\(bracketDimISO), \(bracketDimFrameDuration.timescale)  \(bracketDimFrameDuration.value)")
+        print("\(bracketDimISO), \(bracketDimFrameDuration.timescale)  \(bracketDimFrameDuration.value)")
         dimBracketButton.setTitleColor(UIColor.greenColor(), forState: UIControlState.Normal)
     }
     

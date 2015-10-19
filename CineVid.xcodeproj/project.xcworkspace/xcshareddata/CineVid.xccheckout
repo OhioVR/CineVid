@@ -7,17 +7,17 @@
 	<key>IDESourceControlProjectIdentifier</key>
 	<string>034F24DE-2178-4DA8-8780-5395123DE894</string>
 	<key>IDESourceControlProjectName</key>
-	<string>CineVid</string>
+	<string>project</string>
 	<key>IDESourceControlProjectOriginsDictionary</key>
 	<dict>
-		<key>5406285E580778F87F705BD46F336E9B5CA97D62</key>
+		<key>58B3CBA4736B4CF1844891B880025BDA6A109917</key>
 		<string>https://github.com/OhioVR/CineVid.git</string>
 	</dict>
 	<key>IDESourceControlProjectPath</key>
-	<string>CineVid.xcodeproj</string>
+	<string>CineVid.xcodeproj/project.xcworkspace</string>
 	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
 	<dict>
-		<key>5406285E580778F87F705BD46F336E9B5CA97D62</key>
+		<key>58B3CBA4736B4CF1844891B880025BDA6A109917</key>
 		<string>../..</string>
 	</dict>
 	<key>IDESourceControlProjectURL</key>
@@ -25,14 +25,14 @@
 	<key>IDESourceControlProjectVersion</key>
 	<integer>111</integer>
 	<key>IDESourceControlProjectWCCIdentifier</key>
-	<string>5406285E580778F87F705BD46F336E9B5CA97D62</string>
+	<string>58B3CBA4736B4CF1844891B880025BDA6A109917</string>
 	<key>IDESourceControlProjectWCConfigurations</key>
 	<array>
 		<dict>
 			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
 			<string>public.vcs.git</string>
 			<key>IDESourceControlWCCIdentifierKey</key>
-			<string>5406285E580778F87F705BD46F336E9B5CA97D62</string>
+			<string>58B3CBA4736B4CF1844891B880025BDA6A109917</string>
 			<key>IDESourceControlWCCName</key>
 			<string>CineVid</string>
 		</dict>
